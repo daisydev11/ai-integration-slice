@@ -52,6 +52,11 @@ export async function processJob(jobId: string): Promise<void> {
 
   try {
     const parts = await buildParts(job);
+    // A retry after a rejected answer says what was wrong with it. Sending the
+    // identical request again, at a low temperature, mostly buys the identical mistake.
+    if (job.attempts > 1 && job.error && (job.errorCode === "INVALID_OUTPUT" || job.errorCode === "TRUNCATED")) {
+      parts.push({ text: `Your previous reply was rejected by validation. ${job.error.replace(/^Attempt \d+ of \d+: /, "")} Reply again with a JSON object that matches the schema exactly.` });
+    }
     const reply = await callModel({ role, model, parts, schema: toProviderSchema(SCHEMA_FOR[job.kind]) });
 
     // Keep the raw reply before judging it, so a rejected answer can be inspected later.

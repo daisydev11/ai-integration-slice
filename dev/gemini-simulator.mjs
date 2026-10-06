@@ -11,7 +11,7 @@
 //   SIM:REJECT_400     answers HTTP 400 (the provider refuses the request)
 //   SIM:PROSE          answers with a sentence instead of JSON
 //   SIM:WRONG_SHAPE    answers with JSON that does not match the schema
-//   SIM:WRONG_ONCE     wrong shape on the first call for that text, correct after
+//   SIM:WRONG_ONCE     wrong shape first; correct once the retry carries the correction
 //   SIM:NOT_A_JOB      answers that the document is not a job description
 //
 // Run:  node dev/gemini-simulator.mjs
@@ -22,7 +22,6 @@ const PORT = Number(process.env.SIMULATOR_PORT ?? 4020);
 const DELAY_MS = Number(process.env.SIMULATOR_DELAY_MS ?? 1500);
 let inFlight = 0;
 let peak = 0;
-const seenOnce = new Set();
 const stamp = () => new Date().toISOString().slice(11, 23);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -85,7 +84,7 @@ createServer(async (req, res) => {
 
   inFlight++;
   peak = Math.max(peak, inFlight);
-  console.log(`${stamp()} START ${model} ${isSummary ? "summarise" : "extract"}  in flight: ${inFlight}`);
+  console.log(`${stamp()} START ${model} ${isSummary ? "summarise" : "extract"}${text.includes("previous reply was rejected") ? " (retry with correction)" : ""}  in flight: ${inFlight}`);
   let counted = true;
   const leave = () => {
     if (!counted) return false;
@@ -109,8 +108,7 @@ createServer(async (req, res) => {
   if (text.includes("SIM:REJECT_400")) return finish(400, { error: { code: 400, message: "Unsupported document", status: "INVALID_ARGUMENT" } });
 
   let reply;
-  const wrongOnce = text.includes("SIM:WRONG_ONCE") && !seenOnce.has(text);
-  if (wrongOnce) seenOnce.add(text);
+  const wrongOnce = text.includes("SIM:WRONG_ONCE") && !text.includes("previous reply was rejected");
   if (text.includes("SIM:PROSE")) reply = "Sure! Here are the requirements I found in the document you shared: strong communication skills.";
   else if (text.includes("SIM:WRONG_SHAPE") || wrongOnce) reply = JSON.stringify({ jobTitle: "Product Designer", requirements: "Figma, research", seniority: "expert" });
   else if (isSummary) reply = JSON.stringify(summarise(text));

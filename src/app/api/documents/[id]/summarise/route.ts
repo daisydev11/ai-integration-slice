@@ -20,6 +20,11 @@ export async function POST(request: Request, { params }: Context) {
   if (!extracted?.isJobDescription) {
     return errorResponse(409, "NOTHING_TO_SUMMARISE", "This document has no extracted requirements to summarise.");
   }
+  // The summary already exists: return it as done rather than paying the model
+  // to write it again.
+  if (document.summary?.status === "DONE") {
+    return NextResponse.json({ ok: true, jobId: document.summary.id, alreadyDone: true });
+  }
   if ((await remainingJobsToday(auth.user.id)) <= 0) {
     return errorResponse(429, "DAILY_LIMIT", `You have reached today's limit of ${aiConfig.limits.jobsPerUserPerDay} AI tasks. Try again tomorrow.`);
   }

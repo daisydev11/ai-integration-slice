@@ -86,16 +86,20 @@ createServer(async (req, res) => {
   inFlight++;
   peak = Math.max(peak, inFlight);
   console.log(`${stamp()} START ${model} ${isSummary ? "summarise" : "extract"}  in flight: ${inFlight}`);
-  const finish = (status, payload) => {
+  let counted = true;
+  const leave = () => {
+    if (!counted) return false;
+    counted = false;
     inFlight--;
-    console.log(`${stamp()} END   ${model} -> HTTP ${status}  in flight: ${inFlight}  (peak ${peak})`);
+    return true;
+  };
+  const finish = (status, payload) => {
+    if (leave()) console.log(`${stamp()} END   ${model} -> HTTP ${status}  in flight: ${inFlight}  (peak ${peak})`);
     send(status, payload);
   };
-  req.on("close", () => {
-    if (!res.writableEnded) {
-      inFlight--;
-      console.log(`${stamp()} ABORT ${model} (client gave up)  in flight: ${inFlight}`);
-    }
+  // The response closing without an answer means the caller gave up (its timeout fired).
+  res.on("close", () => {
+    if (leave()) console.log(`${stamp()} ABORT ${model} (client gave up)  in flight: ${inFlight}`);
   });
 
   if (text.includes("SIM:TIMEOUT") && !(text.includes("SIM:TIMEOUT_ONCE") && isFallbackModel)) return; // never answer

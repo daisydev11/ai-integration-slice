@@ -10,6 +10,7 @@
     "test": "vitest run",
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
+    "simulator": "node dev/gemini-simulator.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {

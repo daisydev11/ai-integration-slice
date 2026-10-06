@@ -3,6 +3,7 @@ import type { z } from "zod";
 import { toFieldErrors, type FieldErrors } from "@/lib/validation/auth";
 import { rateLimit } from "@/lib/auth/rate-limit";
 import type { RateLimitRule } from "@/lib/config";
+import { getSessionUser, type SessionUser } from "@/lib/auth/session";
 
 // The one error shape every endpoint returns, so the forms handle it once.
 export type ApiError = { error: { code: string; message: string; fields?: FieldErrors; retryAfterSeconds?: number } };
@@ -71,4 +72,12 @@ export async function parseBody<S extends z.ZodTypeAny>(
     };
   }
   return { data: parsed.data };
+}
+
+/** For signed-in API routes: the user, or a ready 401 response. */
+export async function requireUser(): Promise<
+  { user: SessionUser; response?: undefined } | { user?: undefined; response: NextResponse<ApiError> }
+> {
+  const user = await getSessionUser();
+  return user ? { user } : { response: errorResponse(401, "UNAUTHENTICATED", "Sign in to continue.") };
 }

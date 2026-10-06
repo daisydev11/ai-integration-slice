@@ -1,0 +1,137 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  // Stored lowercased. Uniqueness is enforced here, not only in code.
+  email           String    @unique
+  name            String
+  // bcrypt hash. The plain password is never stored.
+  passwordHash    String
+  // Null until the emailed code is confirmed.
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+
+  sessions           Session[]
+  verificationCodes  VerificationCode[]
+  passwordResetTokens PasswordResetToken[]
+  documents           Document[]
+  jobs                Job[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  // SHA-256 of the cookie value. The raw token only ever lives in the cookie.
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model VerificationCode {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SHA-256 of the 6-digit code.
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  // Wrong guesses against this code. The code dies at the configured maximum.
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SHA-256 of the token in the emailed link.
+  tokenHash String    @unique
+  expiresAt DateTime
+  // Set once, atomically, when the token is redeemed.
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model RateLimit {
+  // "<action>:<ip or email>"
+  key         String   @id
+  count       Int
+  windowStart DateTime
+}
+
+// An uploaded file. The bytes live in object storage; this row holds only
+// the key that finds them.
+model Document {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String   @unique
+  createdAt    DateTime @default(now())
+  jobs         Job[]
+
+  @@index([userId, createdAt])
+}
+
+enum JobKind {
+  EXTRACT   // read the uploaded file into structured requirements
+  SUMMARISE // the follow-up: rewrite the structured result for a candidate
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+// One unit of background work: one model task for one document.
+model Job {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentId   String
+  document     Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  kind         JobKind
+  status       JobStatus @default(PENDING)
+  // Model calls started for this job so far.
+  attempts     Int       @default(0)
+  // Model used on the latest attempt.
+  model        String?
+  // Latest failure: a stable code for the interface and the message for humans.
+  errorCode    String?
+  error        String?
+  // Exactly what the model returned, before any parsing.
+  rawOutput    String?
+  // The parsed output, stored only after it passed validation in our code.
+  result       Json?
+  inputTokens  Int?
+  outputTokens Int?
+  // Earliest time the worker may pick this up (used for retry backoff).
+  runAfter     DateTime  @default(now())
+  lockedAt     DateTime?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([status, runAfter, createdAt])
+  @@index([documentId, kind, createdAt])
+  @@index([userId, createdAt])
+}
